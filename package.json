@@ -1,6 +1,6 @@
 {
   "name": "mnemo-dmp",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Library for parsing menmo (cave survey tools) dmp files",
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
@@ -28,6 +28,5 @@
     "dist",
     "README.md"
   ],
-  "dependencies": {
-  }
+  "dependencies": {}
 }
