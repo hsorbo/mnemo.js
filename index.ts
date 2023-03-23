@@ -1,5 +1,3 @@
-import { Parser } from "binary-parser";
-
 const shot_length = 16;
 const header_length = 10;
 
@@ -24,12 +22,11 @@ export interface Shot {
     depth_out: number;
     pitch_in: number;
     pitch_out: number;
-    marker: string;
+    marker: number;
 }
 
 export interface Bas {
-    //date: Date;
-    date: string;
+    date: Date;
     name: string;
     direction: Direction;
     shots: Shot[];
@@ -39,95 +36,126 @@ function dmp_to_byte_array(raw: string): Uint8Array {
     return new Uint8Array(raw.split(';').map(x => parseInt(x)));
 }
 
-function parse_hdr(raw: Uint8Array): any {
-    const p = new Parser()
-        .uint8("magic")
-        .uint8("year")
-        .uint8("month")
-        .uint8("day")
-        .uint8("hour")
-        .uint8("minute")
-        .string("name", { encoding: "ascii", length: 3 })
-        .uint8("direction");
-
-    const hdr = p.parse(raw);
-
-    if (hdr.magic !== 2) {
-        throw new Error("Invalid file format");
-    }
-
-    if (hdr.year > 40, hdr.year < 16) {
-        throw new Error("Invalid year");
-    }
-    return hdr;
+function byte_array_to_dmp(arr: Uint8Array): string {
+    let s = "";
+    arr.forEach((x) => {
+        s = `${s}${(x << 24 >> 24).toString()};`;
+    });
+    return s + "\n";
 }
 
-function parse_shot(raw: Uint8Array): Shot {
-    const p = new Parser()
-        .uint8("type")
-        .int16be("head_in")
-        .int16be("head_out")
-        .int16be("length")
-        .int16be("depth_in")
-        .int16be("depth_out")
-        .int16be("pitch_in")
-        .int16be("pitch_out")
-        .uint8("marker");
-
-    const s = p.parse(raw);
+function read_shot(buf: Buffer, at: number): Shot {
     return {
-        type: s.type,
-        head_in: s.head_in / 10,
-        head_out: s.head_out / 10,
-        length: s.length / 100,
-        depth_in: s.depth_in / 100,
-        depth_out: s.depth_out / 100,
-        pitch_in: s.pitch_in / 10,
-        pitch_out: s.pitch_out / 10,
-        marker: s.marker
+        type: buf.readUInt8(at + 0),
+        head_in: buf.readInt16BE(at + 1) / 10,
+        head_out: buf.readInt16BE(at + 3) / 10,
+        length: buf.readInt16BE(at + 5) / 100,
+        depth_in: buf.readInt16BE(at + 7) / 100,
+        depth_out: buf.readInt16BE(at + 9) / 100,
+        pitch_in: buf.readInt16BE(at + 11) / 10,
+        pitch_out: buf.readInt16BE(at + 13) / 10,
+        marker: buf.readUInt8(at + 14)
     };
 }
 
-function parse_shots(raw: Uint8Array): Shot[] {
+function write_shot(buf: Buffer, at: number, shot: Shot) {
+    buf.writeUInt8(shot.type, at + 0);
+    buf.writeInt16BE(shot.head_in * 10, at + 1);
+    buf.writeInt16BE(shot.head_out * 10, at + 3);
+    buf.writeInt16BE(Math.round(shot.length * 100), at + 5);
+    buf.writeInt16BE(Math.round(shot.depth_in * 100), at + 7);
+    buf.writeInt16BE(Math.round(shot.depth_out * 100), at + 9);
+    buf.writeInt16BE(shot.pitch_in * 10, at + 11);
+    buf.writeInt16BE(shot.pitch_out * 10, at + 13);
+    buf.writeUInt8(shot.marker, at + 14);
+}
 
-    let chunk = raw;
+function read_shots(buf: Buffer, at: number): Shot[] {
     const shots: Shot[] = []
-    while (true) {
-        const shot = parse_shot(chunk);
+    for (let i = 0; i < buf.length; i += shot_length) {
+        const shot = read_shot(buf, i + at);
         shots.push(shot)
         if (shot.type === ShotType.EOC) break;
-        chunk = chunk.slice(shot_length);
     }
     return shots;
 }
 
-function parse_survey(byte_string: Uint8Array): Bas {
-    const head = byte_string.slice(0, header_length);
-    const tail = byte_string.slice(header_length);
-    const hdr = parse_hdr(head);
-    const shots = parse_shots(tail);
+function write_shots(buf: Buffer, at: number, shots: Shot[]) {
+    //todo: assert last and only last is EOC
+    shots.forEach((shot, i) => {
+        write_shot(buf, at + (i * shot_length), shot);
+    })
+}
+
+function read_survey(buf: Buffer, at: number): Bas {
+    const magic = buf.readUInt8(at + 0);
+    const year = buf.readUInt8(at + 1);
+
+    if (magic !== 2) {
+        throw new Error("Invalid file format");
+    }
+
+    if (year > 100 || year < 16) {
+        throw new Error("Invalid year");
+    }
+
     return {
-        date: new Date(hdr.year + 2000, hdr.month, hdr.day, hdr.hour, hdr.minute).toISOString(),
-        name: hdr.name,
-        direction: hdr.direction,
-        shots: shots
+        date: new Date(year + 2000,
+            buf.readUInt8(at + 2),
+            buf.readUInt8(at + 3),
+            buf.readUInt8(at + 4),
+            buf.readUInt8(at + 5)),
+        name: buf.toString("ascii", at + 6, at + 9),
+        direction: buf.readUInt8(at + 9),
+        shots: read_shots(buf, at + header_length)
     };
 }
 
-function parse_surveys(byte_string: Uint8Array): Bas[] {
-    let surveys: Bas[] = [];
-    let cursor = byte_string;
-    while (cursor.length > header_length) {
-        const survey = parse_survey(cursor);
+function write_survey(buf: Buffer, at: number, survey: Bas) {
+    buf.writeUInt8(2, at + 0);
+    buf.writeUInt8(survey.date.getFullYear() - 2000, at + 1);
+    buf.writeUInt8(survey.date.getMonth(), at + 2);
+    buf.writeUInt8(survey.date.getDay() - 1, at + 3);
+    buf.writeUInt8(survey.date.getHours(), at + 4);
+    buf.writeUInt8(survey.date.getMinutes(), at + 5);
+    buf.write(survey.name, at + 6, 3, "ascii");
+    buf.writeUInt8(survey.direction, at + 9);
+    write_shots(buf, at + header_length, survey.shots);
+}
+
+
+function binary_size_of(survey: Bas) {
+    return header_length + (survey.shots.length * shot_length)
+}
+
+function read_surveys(buf: Buffer): Bas[] {
+    const surveys: Bas[] = [];
+    let at = 0;
+    while (at + header_length < buf.length) {
+        const survey = read_survey(buf, at);
         surveys.push(survey);
-        const size = 10 + (survey.shots.length * 16);
-        //console.log(`read: ${size}, size: ${cursor.length}`);
-        cursor = cursor.slice(size);
+        at += binary_size_of(survey);
     }
     return surveys;
+}
 
+function write_surveys(buf: Buffer, surveys: Bas[]) {
+    let at = 0;
+    surveys.forEach((survey) => {
+        write_survey(buf, at, survey);
+        at += binary_size_of(survey);
+    });
 }
 
 export function from_string(raw: string): Bas[] {
-    return parse_surveys(dmp_to_byte_array(raw));
+    return read_surveys(Buffer.from(dmp_to_byte_array(raw)));
+}
+
+export function to_string(surveys: Bas[]): string {
+    const size = surveys
+        .map(x => binary_size_of(x))
+        .reduce((acc, x) => acc + x, 0);
+    const buf = Buffer.alloc(size);
+    write_surveys(buf, surveys);
+    return byte_array_to_dmp(buf);
 }

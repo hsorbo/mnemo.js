@@ -29,6 +29,5 @@
     "README.md"
   ],
   "dependencies": {
-    "binary-parser": "^2.2.1"
   }
 }
