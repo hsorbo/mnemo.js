@@ -1,20 +1,21 @@
 import { Parser } from "binary-parser";
+
 const shot_length = 16;
 const header_length = 10;
 
-enum Direction {
+export enum Direction {
     In = 0,
     Out = 1
 }
 
-enum ShotType {
+export enum ShotType {
     CSA,
     CSB,
     STD,
     EOC
 }
 
-class Shot {
+export interface Shot {
     type: ShotType;
     head_in: number;
     head_out: number;
@@ -24,32 +25,14 @@ class Shot {
     pitch_in: number;
     pitch_out: number;
     marker: string;
-
-    constructor(type: ShotType, head_in: number, head_out: number, length: number, depth_in: number, depth_out: number, pitch_in: number, pitch_out: number, marker: string) {
-        this.type = type;
-        this.head_in = head_in;
-        this.head_out = head_out;
-        this.length = length;
-        this.depth_in = depth_in;
-        this.depth_out = depth_out;
-        this.pitch_in = pitch_in;
-        this.pitch_out = pitch_out;
-        this.marker = marker;
-    }
 }
 
-class Bas {
-    date: Date;
+export interface Bas {
+    //date: Date;
+    date: string;
     name: string;
     direction: Direction;
     shots: Shot[];
-
-    constructor(date: Date, sname: string, direction: Direction, shots: Shot[]) {
-        this.date = date;
-        this.name = sname;
-        this.direction = direction;
-        this.shots = shots;
-    }
 }
 
 function dmp_to_byte_array(raw: string): Uint8Array {
@@ -92,22 +75,23 @@ function parse_shot(raw: Uint8Array): Shot {
         .uint8("marker");
 
     const s = p.parse(raw);
-    return new Shot(
-        s.type,
-        s.head_in / 10,
-        s.head_out / 10,
-        s.length / 100,
-        s.depth_in / 100,
-        s.depth_out / 100,
-        s.pitch_in / 10,
-        s.pitch_out / 10,
-        s.marker);
+    return {
+        type: s.type,
+        head_in: s.head_in / 10,
+        head_out: s.head_out / 10,
+        length: s.length / 100,
+        depth_in: s.depth_in / 100,
+        depth_out: s.depth_out / 100,
+        pitch_in: s.pitch_in / 10,
+        pitch_out: s.pitch_out / 10,
+        marker: s.marker
+    };
 }
 
 function parse_shots(raw: Uint8Array): Shot[] {
-    
+
     let chunk = raw;
-    const shots : Shot[] = []
+    const shots: Shot[] = []
     while (true) {
         const shot = parse_shot(chunk);
         shots.push(shot)
@@ -122,11 +106,12 @@ function parse_survey(byte_string: Uint8Array): Bas {
     const tail = byte_string.slice(header_length);
     const hdr = parse_hdr(head);
     const shots = parse_shots(tail);
-    return new Bas(
-        new Date(hdr.year + 2000, hdr.month, hdr.day, hdr.hour, hdr.minute),
-        hdr.name,
-        hdr.direction,
-        shots);
+    return {
+        date: new Date(hdr.year + 2000, hdr.month, hdr.day, hdr.hour, hdr.minute).toISOString(),
+        name: hdr.name,
+        direction: hdr.direction,
+        shots: shots
+    };
 }
 
 function parse_surveys(byte_string: Uint8Array): Bas[] {
