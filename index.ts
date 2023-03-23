@@ -29,7 +29,7 @@ export interface Shot {
 
 export interface Bas {
     //date: Date;
-    date: string;
+    //date: string;
     name: string;
     direction: Direction;
     shots: Shot[];
@@ -107,7 +107,7 @@ function parse_survey(byte_string: Uint8Array): Bas {
     const hdr = parse_hdr(head);
     const shots = parse_shots(tail);
     return {
-        date: new Date(hdr.year + 2000, hdr.month, hdr.day, hdr.hour, hdr.minute).toISOString(),
+        //date: new Date(hdr.year + 2000, hdr.month, hdr.day, hdr.hour, hdr.minute).toISOString(),
         name: hdr.name,
         direction: hdr.direction,
         shots: shots
