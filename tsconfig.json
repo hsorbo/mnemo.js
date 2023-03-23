@@ -10,6 +10,5 @@
       "sourceMap": true,
       "strictPropertyInitialization": false
     },
-    "include": ["test/**/*", "index.ts"]
-    
+    "include": ["index.ts"]
   }
