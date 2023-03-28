@@ -25,24 +25,14 @@ export interface Shot {
     marker: number;
 }
 
-export interface Bas {
+// Survey, in ariane known as BASX.
+export interface Survey {
     date: Date;
     name: string;
     direction: Direction;
     shots: Shot[];
 }
 
-function dmp_to_byte_array(raw: string): Uint8Array {
-    return new Uint8Array(raw.split(';').map(x => parseInt(x)));
-}
-
-function byte_array_to_dmp(arr: Uint8Array): string {
-    let s = "";
-    arr.forEach((x) => {
-        s = `${s}${(x << 24 >> 24).toString()};`;
-    });
-    return s + "\n";
-}
 
 function read_shot(buf: Buffer, at: number): Shot {
     return {
@@ -87,7 +77,7 @@ function write_shots(buf: Buffer, at: number, shots: Shot[]) {
     })
 }
 
-function read_survey(buf: Buffer, at: number): Bas {
+function read_survey(buf: Buffer, at: number): Survey {
     const magic = buf.readUInt8(at + 0);
     const year = buf.readUInt8(at + 1);
 
@@ -111,7 +101,7 @@ function read_survey(buf: Buffer, at: number): Bas {
     };
 }
 
-function write_survey(buf: Buffer, at: number, survey: Bas) {
+function write_survey(buf: Buffer, at: number, survey: Survey) {
     buf.writeUInt8(2, at + 0);
     buf.writeUInt8(survey.date.getFullYear() - 2000, at + 1);
     buf.writeUInt8(survey.date.getMonth(), at + 2);
@@ -124,12 +114,12 @@ function write_survey(buf: Buffer, at: number, survey: Bas) {
 }
 
 
-function binary_size_of(survey: Bas) {
+function binary_size_of(survey: Survey) {
     return header_length + (survey.shots.length * shot_length)
 }
 
-function read_surveys(buf: Buffer): Bas[] {
-    const surveys: Bas[] = [];
+function read_surveys(buf: Buffer): Survey[] {
+    const surveys: Survey[] = [];
     let at = 0;
     while (at + header_length < buf.length) {
         const survey = read_survey(buf, at);
@@ -139,7 +129,7 @@ function read_surveys(buf: Buffer): Bas[] {
     return surveys;
 }
 
-function write_surveys(buf: Buffer, surveys: Bas[]) {
+function write_surveys(buf: Buffer, surveys: Survey[]) {
     let at = 0;
     surveys.forEach((survey) => {
         write_survey(buf, at, survey);
@@ -147,15 +137,27 @@ function write_surveys(buf: Buffer, surveys: Bas[]) {
     });
 }
 
-export function from_string(raw: string): Bas[] {
-    return read_surveys(Buffer.from(dmp_to_byte_array(raw)));
+export function dmpToByteArray(dmp_data: string): Uint8Array {
+    return new Uint8Array(dmp_data.split(';').map(x => parseInt(x)));
 }
 
-export function to_string(surveys: Bas[]): string {
+export function dmpFromByteArray(arr: Uint8Array): string {
+    let s = "";
+    arr.forEach((x) => {
+        s = `${s}${(x << 24 >> 24).toString()};`;
+    });
+    return s + "\n";
+}
+
+export function surveyListFromByteArray(raw: Uint8Array): Survey[] {
+    return read_surveys(Buffer.from(raw));
+}
+
+export function surveyListToByteArray(surveys: Survey[]): Uint8Array {
     const size = surveys
         .map(x => binary_size_of(x))
         .reduce((acc, x) => acc + x, 0);
     const buf = Buffer.alloc(size);
     write_surveys(buf, surveys);
-    return byte_array_to_dmp(buf);
+    return buf;
 }
